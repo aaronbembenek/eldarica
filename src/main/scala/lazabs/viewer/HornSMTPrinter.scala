@@ -228,7 +228,8 @@ object HornSMTPrinter {
 
         case BVconst(bits, v)    => sb ++= "(_ bv" + v + " " + bits + ")"
         case Int2BitVec(bits, e) => printOp("(_ int2bv " + bits + ")", e)
-        case UnaryExpression(op: BVneg, e) => printOp(op.st, e)
+        case UnaryExpression(op: BVextract, e) => printOp("extract<" + op.begin + "," + op.end + ">", e)
+        case UnaryExpression(op, e) => printOp(op.st, e)
         // Special printing for concat to make it easy to extract type information
         case BinaryExpression(e1, op: BVconcat, e2) => printOp("concat<" + op.bits1 + "," + op.bits2 + ">", e1, e2)
         case BinaryExpression(e1, op, e2) => printOp(op.st, e1, e2)
