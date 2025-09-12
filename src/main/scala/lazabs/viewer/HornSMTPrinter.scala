@@ -84,12 +84,21 @@ object HornSMTPrinter {
       curVarCounter
     }
 
-    def printHornLiteral(hl: HornLiteral): String = hl match {
-      case Interp(v) => printExp(v)(List())
-      case RelVar(varName, params) =>
-        if(params.isEmpty) quoteIdentifier(varName) else
-        "(" + quoteIdentifier(varName) + " " +
-        (params.map(printParameter).mkString(" ") ) + ")"        
+    def printHornLiteral(hl: HornLiteral, sb: StringBuilder): Unit = hl match {
+        case Interp(v) => printExp(v)(List(), sb)
+        case RelVar(varName, params) =>
+          if (params.isEmpty)
+            sb ++= quoteIdentifier(varName)
+          else
+            sb ++= "(" + quoteIdentifier(varName) + " " + params
+              .map(printParameter)
+              .mkString(" ") + ")"
+    }
+
+    def stringifyHornLiteral(hl: HornLiteral): String = {
+      var sb = new StringBuilder()
+      printHornLiteral(hl, sb)
+      sb.toString()
     }
 
     def printParameter(p: Parameter): String = varMap.get(p.name) match {
@@ -107,114 +116,139 @@ object HornSMTPrinter {
         num.toString
       }
 
-    def printExp(e: Expression)(implicit vars : List[String]): String = e match {
-      case Existential(v, qe) => {
-        val name = "var" + vars.size
-        ("(exists ((" + name + " " + type2String(v.stype) + ")) " +
-           printExp(qe)(name :: vars) + ")")
+    def printExp(
+        e: Expression
+    )(implicit vars: List[String], sb: StringBuilder): Unit = {
+
+      def printOp(op: String, args: Expression*): Unit = {
+        sb ++= "(" + op
+        printExps(args)
+        sb ++= ")"
       }
-      case Universal(v, qe) => {
-        val name = "var" + vars.size
-        ("(forall ((" + name + " " + type2String(v.stype) + ")) " +
-           printExp(qe)(name :: vars) + ")")
+
+      def printExps(args: Seq[Expression]): Unit = {
+        for (arg <- args) {
+          sb ++= " "
+          printExp(arg)
+        }
       }
-      case Conjunction(e1, e2) => "(and " + printExp(e1) + " " + printExp(e2) + ")"
-      case Disjunction(e1, e2) => "(or " + printExp(e1) + " " + printExp(e2) + ")"
 
-      // special handling of the tester predicates of ADTs
-      case e@Equality(NumericalConst(num), ADTtest(adt, sortNum, expr)) =>
-        "(is-" + adt.getCtorPerSort(sortNum, num.toInt).name +
-        " " + printExp(expr) + ")"
-      case e@Equality(ADTtest(adt, sortNum, expr), NumericalConst(num)) =>
-        "(is-" + adt.getCtorPerSort(sortNum, num.toInt).name +
-        " " + printExp(expr) + ")"
+      e match {
+        case Existential(v, qe) => {
+          val name = "var" + vars.size
+          sb ++= "(exists ((" + name + " " + type2String(v.stype) + ")) "
+          printExp(qe)(name :: vars, sb)
+          sb ++= ")"
+        }
+        case Universal(v, qe) => {
+          val name = "var" + vars.size
+          sb ++= "(forall ((" + name + " " + type2String(v.stype) + ")) "
+          printExp(qe)(name :: vars, sb)
+          sb ++= ")"
+        }
+        case Conjunction(e1, e2) => printOp("and", e1, e2)
+        case Disjunction(e1, e2) => printOp("or", e1, e2)
 
-      case Equality(e1, e2) => "(= " + printExp(e1) + " " + printExp(e2) + ")"
-      case Inequality(e1, e2) => printExp(Not(Equality(e1,e2)))
-      case LessThan(e1, e2) => "(< " + printExp(e1) + " " + printExp(e2) + ")"
-      case LessThanEqual(e1, e2) => "(<= " + printExp(e1) + " " + printExp(e2) + ")"
-      case GreaterThan(e1, e2) => "(> " + printExp(e1) + " " + printExp(e2) + ")"
-      case GreaterThanEqual(e1, e2) => "(>= " + printExp(e1) + " " + printExp(e2) + ")"
-      case Modulo(e1, e2) => "(mod " + printExp(e1) + " " + printExp(e2) + ")"
-      case Addition(e1, e2) => "(+ " + printExp(e1) + " " + printExp(e2) + ")"
-      case Subtraction(e1, e2) => "(- " + printExp(e1) + " " + printExp(e2) + ")"
-      case Multiplication(e1, e2) => "(* " + printExp(e1) + " " + printExp(e2) + ")"
-      case Division(e1, e2) => "(div " + printExp(e1) + " " + printExp(e2) + ")"
-      case ADTctor(adt, name, exprList) =>
-        if (exprList.isEmpty)
-          quoteIdentifier(name)
-        else
-          "(" + quoteIdentifier(name) + " " + exprList.map(printExp).mkString(" ") + ")"
-      case ADTsel(adt, name, exprList) =>
-        "(" + quoteIdentifier(name) + " " + exprList.map(printExp).mkString(" ") + ")"
-      case ADTsize(adt, _, v) =>
-        "(_size " + printExp(v) + ")"
-      case ArraySelect(ar, ind) =>
-        "(select " + printExp(ar) + " " + printExp(ind) + ")"
-      case ArrayUpdate(ar, ind, value) =>
-        "(store " + printExp(ar) + " " + printExp(ind) + " " + printExp(value) + ")"
-      case ConstArray(value) =>
-        "((as const " + type2String(e.stype) + ") " + printExp(value) + ")"
-      // TODO: use correct function names
-      case HeapFun(heap, fun, exprList) =>
-        if (exprList.isEmpty)
-          quoteIdentifier(fun.name)
-        else
-          "(" + quoteIdentifier(fun.name) + " " + exprList.map(printExp).mkString(" ") + ")"
-      // TODO: use correct function names
-      case HeapPred(heap, pred, exprList) =>
-        "(" + quoteIdentifier(pred.name) + " " + exprList.map(printExp).mkString(" ") + ")"
-      case Not(e) => "(not " + printExp(e) + ")"
-      case Minus(e) => "(- " + printExp(e) + ")"
-      case v@Variable(name,None) => varMap.get(name) match {
-        case Some(i) => getAlphabeticChar(i._1)
-        case None =>
-          val newIndex = getNewVarCounter
-          varMap += (name -> (newIndex,v.stype))
-          getAlphabeticChar(newIndex)
+        // special handling of the tester predicates of ADTs
+        case e @ Equality(NumericalConst(num), ADTtest(adt, sortNum, expr)) => {
+          sb ++= "(is-" + adt.getCtorPerSort(sortNum, num.toInt).name + " "
+          printExp(expr)
+          sb ++= ")"
+        }
+        case e @ Equality(ADTtest(adt, sortNum, expr), NumericalConst(num)) => {
+          sb ++= "(is-" + adt.getCtorPerSort(sortNum, num.toInt).name + " "
+          printExp(expr)
+          sb ++= ")"
+        }
+
+        case Equality(e1, e2)         => printOp("=", e1, e2)
+        case Inequality(e1, e2)       => printExp(Not(Equality(e1, e2)))
+        case LessThan(e1, e2)         => printOp("<", e1, e2)
+        case LessThanEqual(e1, e2)    => printOp("<=", e1, e2)
+        case GreaterThan(e1, e2)      => printOp(">", e1, e2)
+        case GreaterThanEqual(e1, e2) => printOp(">=", e1, e2)
+        case Modulo(e1, e2)           => printOp("mod", e1, e2)
+        case Addition(e1, e2)         => printOp("+", e1, e2)
+        case Subtraction(e1, e2)      => printOp("-", e1, e2)
+        case Multiplication(e1, e2)   => printOp("*", e1, e2)
+        case Division(e1, e2)         => printOp("div", e1, e2)
+        case ADTctor(adt, name, exprList) =>
+          if (exprList.isEmpty)
+            sb ++= quoteIdentifier(name)
+          else {
+            sb ++= "(" + quoteIdentifier(name)
+            printExps(exprList)
+            sb ++= ")"
+          }
+        case ADTsel(adt, name, exprList) =>
+          sb ++= "(" + quoteIdentifier(name)
+          printExps(exprList)
+          sb ++= ")"
+        case ADTsize(adt, _, v)          => printOp("_size", v)
+        case ArraySelect(ar, ind)        => printOp("select", ar, ind)
+        case ArrayUpdate(ar, ind, value) => printOp("store", ar, ind, value)
+        case ConstArray(value) =>
+          printOp("(as const " + type2String(e.stype) + ")", value)
+        case HeapFun(heap, name, exprList) =>
+          if (exprList.isEmpty)
+            sb ++= quoteIdentifier(name)
+          else {
+            sb ++= "(" + quoteIdentifier(name)
+            printExps(exprList)
+            sb ++= ")"
+          }
+        case HeapPred(heap, name, exprList) => {
+          sb ++= "(" + quoteIdentifier(name)
+          printExps(exprList)
+          sb ++= ")"
+        }
+        case Not(e)   => printOp("not", e)
+        case Minus(e) => printOp("-", e)
+        case v @ Variable(name, None) =>
+          varMap.get(name) match {
+            case Some(i) => sb ++= getAlphabeticChar(i._1)
+            case None => {
+              val newIndex = getNewVarCounter
+              varMap += (name -> (newIndex, v.stype))
+              sb ++= getAlphabeticChar(newIndex)
+            }
+          }
+        case Variable(_, Some(index)) =>
+          if (index < vars.size)
+            sb ++= vars(index)
+          else
+            sb ++= getAlphabeticChar(index - vars.size)
+        case NumericalConst(num) =>
+          if (num < 0) {
+            sb ++= "(- " + (num.abs) + ")"
+          } else {
+            sb ++= num.toString
+          }
+        case BoolConst(v) => sb ++= quoteIdentifier(v.toString)
+
+        case BVconst(bits, v)    => sb ++= "(_ bv" + v + " " + bits + ")"
+        case Int2BitVec(bits, e) => printOp("(_ int2bv " + bits + ")", e)
+        case UnaryExpression(op: BVneg, e) => printOp(op.st, e)
+
+        case _ =>
+          throw new Exception("Don't know how to print expression " + e)
       }
-      case Variable(_,Some(index)) =>
-        if (index < vars.size)
-          vars(index)
-        else
-          getAlphabeticChar(index - vars.size)
-      case NumericalConst(num) =>
-        printNum(num)
-      case RationalConst(num, denom) =>
-        "(/ " + printNum(num) + " " + printNum(denom) + ")"
-      case BoolConst(v) => quoteIdentifier(v.toString)
-
-      // TODO: handle all bit-vector operators
-      case BVconst(bits, v) =>
-        "(_ bv" + v + " " + bits + ")"
-      case Int2BitVec(bits, e) =>
-        "((_ int2bv " + bits + ") " + printExp(e) +")"
-      case UnaryExpression(op : BVneg, e) =>
-        "(" + op.st + " " + printExp(e) + ")"
-      case UnaryExpression(BVextract(upper, lower), e) =>
-        f"((_ extract $upper $lower) " + printExp(e) + ")"
-      case BinaryExpression(e1, BVconcat(_, _), e2) =>
-        "(concat " + printExp(e1) + " " + printExp(e2) + ")"
-      case BinaryExpression(e1, BVadd(_), e2) =>
-        "(bvadd " + printExp(e1) + " " + printExp(e2) + ")"
-      case BinaryExpression(e1, BVsub(_), e2) =>
-        "(bvsub " + printExp(e1) + " " + printExp(e2) + ")"
-      case BinaryExpression(e1, BVmul(_), e2) =>
-        "(bvmul " + printExp(e1) + " " + printExp(e2) + ")"
-
-      case _ =>
-        throw new Exception("Don't know how to print expression " + e)
-        ""
     }
-    val head = printHornLiteral(h.head)
+    val head = stringifyHornLiteral(h.head)
     val body = h.body.size match {
       case 0 => ""
-      case 1 => printHornLiteral(h.body.head) 
+      case 1 => stringifyHornLiteral(h.body.head)
       case _ => {
         // print first the relation variables, then constraints
         val (relVars, other) = h.body partition (_.isInstanceOf[RelVar])
-        val strings = (relVars ++ other) map (printHornLiteral _)
-        "(and " + (strings mkString " ") + ")"
+        var sb = new StringBuilder()
+        sb ++= "(and"
+        for (x <- (relVars ++ other)) {
+          sb ++= " "
+          printHornLiteral(x, sb)
+        }
+        sb ++= ")"
+        sb.toString()
       }
     }
     
