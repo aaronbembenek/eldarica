@@ -189,16 +189,16 @@ object HornSMTPrinter {
         case ArrayUpdate(ar, ind, value) => printOp("store", ar, ind, value)
         case ConstArray(value) =>
           printOp("(as const " + type2String(e.stype) + ")", value)
-        case HeapFun(heap, name, exprList) =>
+        case HeapFun(heap, func, exprList) =>
           if (exprList.isEmpty)
-            sb ++= quoteIdentifier(name)
+            sb ++= quoteIdentifier(func.name)
           else {
-            sb ++= "(" + quoteIdentifier(name)
+            sb ++= "(" + quoteIdentifier(func.name)
             printExps(exprList)
             sb ++= ")"
           }
-        case HeapPred(heap, name, exprList) => {
-          sb ++= "(" + quoteIdentifier(name)
+        case HeapPred(heap, func, exprList) => {
+          sb ++= "(" + quoteIdentifier(func.name)
           printExps(exprList)
           sb ++= ")"
         }
@@ -228,10 +228,10 @@ object HornSMTPrinter {
 
         case BVconst(bits, v)    => sb ++= "(_ bv" + v + " " + bits + ")"
         case Int2BitVec(bits, e) => printOp("(_ int2bv " + bits + ")", e)
-        case UnaryExpression(op: BVextract, e) => printOp("extract<" + op.begin + "," + op.end + ">", e)
+        case UnaryExpression(BVextract(upper, lower), e) => printOp("(_ extract " + upper + " " + lower + ")", e)
         case UnaryExpression(op, e) => printOp(op.st, e)
         // Special printing for concat to make it easy to extract type information
-        case BinaryExpression(e1, op: BVconcat, e2) => printOp("concat<" + op.bits1 + "," + op.bits2 + ">", e1, e2)
+        case BinaryExpression(e1, op: BVconcat, e2) => printOp("concat", e1, e2)
         case BinaryExpression(e1, op, e2) => printOp(op.st, e1, e2)
 
         case _ =>
